@@ -1,0 +1,97 @@
+---
+# Zentrales Update-Playbook
+# Funktioniert für Debian/Ubuntu (apt) und RHEL/Rocky/Alma (dnf).
+# Reboot-Verhalten via Variable `update_reboot_policy` (siehe group_vars/all.yml).
+
+- name: Update aller Pakete
+  hosts: "{{ target | default('all') }}"
+  become: true
+  gather_facts: true
+  serial: "{{ update_serial | default('25%') }}"
+  any_errors_fatal: false
+
+  pre_tasks:
+    - name: Zeige Ziel-Host und OS
+      ansible.builtin.debug:
+        msg: "Update auf {{ inventory_hostname }} ({{ ansible_distribution }} {{ ansible_distribution_version }})"
+
+  tasks:
+
+    # ---------- Debian / Ubuntu / Proxmox -----------------------------------
+    - name: "[apt] Cache aktualisieren"
+      ansible.builtin.apt:
+        update_cache: true
+        cache_valid_time: 0
+      when: ansible_os_family == "Debian"
+
+    - name: "[apt] Upgrade durchführen"
+      ansible.builtin.apt:
+        upgrade: "{{ apt_upgrade_type | default('safe') }}"
+      register: apt_result
+      when: ansible_os_family == "Debian"
+
+    - name: "[apt] Autoremove"
+      ansible.builtin.apt:
+        autoremove: true
+      when:
+        - ansible_os_family == "Debian"
+        - apt_autoremove | default(true) | bool
+
+    - name: "[apt] Autoclean"
+      ansible.builtin.apt:
+        autoclean: true
+      when:
+        - ansible_os_family == "Debian"
+        - apt_autoclean | default(true) | bool
+
+    - name: "[apt] Prüfen ob Reboot erforderlich"
+      ansible.builtin.stat:
+        path: /var/run/reboot-required
+      register: deb_reboot
+      when: ansible_os_family == "Debian"
+
+    # ---------- RHEL / Rocky / Alma / Fedora --------------------------------
+    - name: "[dnf] Upgrade durchführen"
+      ansible.builtin.dnf:
+        name: "*"
+        state: latest
+        update_cache: true
+        security: "{{ dnf_upgrade_type == 'security' }}"
+      register: dnf_result
+      when: ansible_os_family == "RedHat"
+
+    - name: "[dnf] Autoremove"
+      ansible.builtin.dnf:
+        autoremove: true
+      when: ansible_os_family == "RedHat"
+
+    - name: "[dnf] needs-restarting prüfen"
+      ansible.builtin.command: needs-restarting -r
+      register: rhel_reboot
+      changed_when: false
+      failed_when: rhel_reboot.rc not in [0, 1]
+      when: ansible_os_family == "RedHat"
+
+    # ---------- Reboot-Entscheidung -----------------------------------------
+    - name: Reboot-Bedarf zusammenfassen
+      ansible.builtin.set_fact:
+        reboot_needed: >-
+          {{
+            (ansible_os_family == 'Debian' and deb_reboot.stat.exists | default(false))
+            or
+            (ansible_os_family == 'RedHat' and rhel_reboot.rc | default(0) == 1)
+          }}
+
+    - name: Reboot-Status melden
+      ansible.builtin.debug:
+        msg: >-
+          {{ inventory_hostname }}: reboot_needed={{ reboot_needed }},
+          policy={{ update_reboot_policy | default('if_needed') }}
+
+    - name: Host neustarten
+      ansible.builtin.reboot:
+        reboot_timeout: "{{ update_reboot_timeout | default(600) }}"
+        msg: "Reboot durch Ansible (Update-Playbook)"
+      when:
+        - update_reboot_policy | default('if_needed') in ['if_needed', 'always']
+        - (update_reboot_policy == 'always') or (reboot_needed | bool)

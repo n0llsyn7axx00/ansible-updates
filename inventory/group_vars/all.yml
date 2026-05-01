@@ -1,0 +1,25 @@
+---
+# Globale Defaults für alle Hosts
+# (Pro Host/Gruppe überschreibbar in inventory/hosts.yml oder group_vars/<gruppe>.yml)
+
+# SSH-Zugang ----------------------------------------------------------------
+ansible_user: root
+ansible_ssh_common_args: '-o StrictHostKeyChecking=no'
+
+# Update-Verhalten ----------------------------------------------------------
+# Reboot-Strategie:
+#   never      = nie automatisch neustarten (nur melden)
+#   if_needed  = neustarten wenn Kernel/libc-Update einen Reboot erfordert
+#   always     = immer neustarten nach Update
+update_reboot_policy: if_needed
+
+# Zeitfenster für Reboot-Wartezeit (Sekunden)
+update_reboot_timeout: 600
+
+# Apt-spezifisch
+apt_upgrade_type: safe   # safe | full | dist
+apt_autoremove: true
+apt_autoclean: true
+
+# Dnf-spezifisch
+dnf_upgrade_type: default  # default | minimal | security

@@ -1,0 +1,43 @@
+---
+# Hosts neustarten — aber NUR die, die einen Reboot brauchen.
+# Nützlich nach einem Update-Lauf mit Policy 'never'.
+
+- name: Hosts mit ausstehendem Reboot neustarten
+  hosts: "{{ target | default('all') }}"
+  become: true
+  gather_facts: true
+  serial: "{{ reboot_serial | default('25%') }}"
+
+  tasks:
+
+    - name: "[Debian] Prüfen ob Reboot erforderlich"
+      ansible.builtin.stat:
+        path: /var/run/reboot-required
+      register: deb_reboot
+      when: ansible_os_family == "Debian"
+
+    - name: "[RedHat] needs-restarting prüfen"
+      ansible.builtin.command: needs-restarting -r
+      register: rhel_reboot
+      changed_when: false
+      failed_when: rhel_reboot.rc not in [0, 1]
+      when: ansible_os_family == "RedHat"
+
+    - name: Reboot-Bedarf bestimmen
+      ansible.builtin.set_fact:
+        reboot_needed: >-
+          {{
+            (ansible_os_family == 'Debian' and deb_reboot.stat.exists | default(false))
+            or
+            (ansible_os_family == 'RedHat' and rhel_reboot.rc | default(0) == 1)
+          }}
+
+    - name: Status-Übersicht
+      ansible.builtin.debug:
+        msg: "{{ inventory_hostname }}: reboot_needed={{ reboot_needed }}"
+
+    - name: Reboot durchführen
+      ansible.builtin.reboot:
+        reboot_timeout: "{{ update_reboot_timeout | default(600) }}"
+        msg: "Reboot durch Ansible (reboot-if-needed)"
+      when: reboot_needed | bool

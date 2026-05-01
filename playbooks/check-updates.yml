@@ -1,0 +1,52 @@
+---
+# Nur prüfen welche Updates anstehen — keine Änderungen am System.
+# Ideal für Schedule "wöchentlicher Report".
+
+- name: Verfügbare Updates auflisten
+  hosts: "{{ target | default('all') }}"
+  become: true
+  gather_facts: true
+
+  tasks:
+
+    # ---------- Debian / Ubuntu --------------------------------------------
+    - name: "[apt] Cache aktualisieren"
+      ansible.builtin.apt:
+        update_cache: true
+      when: ansible_os_family == "Debian"
+
+    - name: "[apt] Verfügbare Upgrades auflisten"
+      ansible.builtin.command: apt list --upgradable
+      register: apt_updates
+      changed_when: false
+      when: ansible_os_family == "Debian"
+
+    - name: "[apt] Anzahl ausstehender Updates"
+      ansible.builtin.shell: |
+        set -o pipefail
+        apt list --upgradable 2>/dev/null | grep -c upgradable || true
+      args:
+        executable: /bin/bash
+      register: apt_count
+      changed_when: false
+      when: ansible_os_family == "Debian"
+
+    # ---------- RHEL / Rocky / Alma ----------------------------------------
+    - name: "[dnf] Verfügbare Updates auflisten"
+      ansible.builtin.command: dnf check-update
+      register: dnf_updates
+      changed_when: false
+      failed_when: dnf_updates.rc not in [0, 100]
+      when: ansible_os_family == "RedHat"
+
+    # ---------- Report ------------------------------------------------------
+    - name: Update-Report
+      ansible.builtin.debug:
+        msg: |
+          === {{ inventory_hostname }} ({{ ansible_distribution }} {{ ansible_distribution_version }}) ===
+          {% if ansible_os_family == "Debian" %}
+          Ausstehende Updates: {{ apt_count.stdout | trim }}
+          {{ apt_updates.stdout }}
+          {% elif ansible_os_family == "RedHat" %}
+          {{ dnf_updates.stdout }}
+          {% endif %}

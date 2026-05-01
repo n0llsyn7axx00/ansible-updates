@@ -1,0 +1,7 @@
+*.retry
+*.swp
+.vscode/
+.idea/
+__pycache__/
+.ansible/
+*.log
