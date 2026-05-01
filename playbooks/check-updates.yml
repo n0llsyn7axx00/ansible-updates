@@ -5,7 +5,18 @@
 - name: Verfügbare Updates auflisten
   hosts: "{{ target | default('all') }}"
   become: true
-  gather_facts: true
+  gather_facts: false
+  any_errors_fatal: false
+  max_fail_percentage: 100
+
+  pre_tasks:
+    - name: Facts sammeln (unreachable hosts werden übersprungen)
+      ansible.builtin.setup:
+      ignore_unreachable: true
+
+    - name: Nur reachable Hosts fortsetzen
+      ansible.builtin.meta: end_host
+      when: ansible_facts == {}
 
   tasks:
 

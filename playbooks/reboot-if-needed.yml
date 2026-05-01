@@ -5,8 +5,21 @@
 - name: Hosts mit ausstehendem Reboot neustarten
   hosts: "{{ target | default('all') }}"
   become: true
-  gather_facts: true
-  serial: "{{ reboot_serial | default('25%') }}"
+  gather_facts: false
+  any_errors_fatal: false
+  max_fail_percentage: 100
+
+  # serial nur via `-e reboot_serial=...` aktivieren — dann werden Reboots
+  # gestaffelt durchgeführt (z.B. '1' = ein Host nach dem anderen).
+
+  pre_tasks:
+    - name: Facts sammeln (unreachable hosts werden übersprungen)
+      ansible.builtin.setup:
+      ignore_unreachable: true
+
+    - name: Nur reachable Hosts fortsetzen
+      ansible.builtin.meta: end_host
+      when: ansible_facts == {}
 
   tasks:
 

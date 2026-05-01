@@ -6,11 +6,23 @@
 - name: Update aller Pakete
   hosts: "{{ target | default('all') }}"
   become: true
-  gather_facts: true
-  serial: "{{ update_serial | default('25%') }}"
+  gather_facts: false
   any_errors_fatal: false
+  max_fail_percentage: 100
+
+  # serial nur über `-e update_serial=...` aktivieren wenn rolling-updates gewünscht.
+  # Default: alle parallel — damit ein einzelner unreachable Host nicht den
+  # Job abbricht (passiert sonst bei kleinen Batches).
 
   pre_tasks:
+    - name: Facts sammeln (unreachable hosts werden übersprungen)
+      ansible.builtin.setup:
+      ignore_unreachable: true
+
+    - name: Nur reachable Hosts fortsetzen
+      ansible.builtin.meta: end_host
+      when: ansible_facts == {}
+
     - name: Zeige Ziel-Host und OS
       ansible.builtin.debug:
         msg: "Update auf {{ inventory_hostname }} ({{ ansible_distribution }} {{ ansible_distribution_version }})"
